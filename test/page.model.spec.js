@@ -5,6 +5,7 @@ var spies = require('chai-spies');
 chai.use(spies);
 chai.should();
 chai.use(require('chai-things'));
+var marked = require('marked')
 
 var models = require('../models')
 var Page = models.Page;
@@ -18,10 +19,20 @@ var Page = models.Page;
 
 describe('Page model', function () {
 
+    /*
+    beforeEach( function () {
+      return User.sync({force:true}).then(function() {
+        return Page.synce({force:true})
+      })
+    })
+    RESETS the database instead of Page.destroys()
+    */
+
   describe('Virtuals', function () {
     var page;
 
     beforeEach(function() {
+      //.build is not Async, which means it's not touching the database
       page = Page.build({
         title: "What a day",
         content: 'Hello my friend'
@@ -29,19 +40,28 @@ describe('Page model', function () {
     })
 
     describe('route', function () {
-      xit('returns the url_name prepended by "/wiki/"', function() {
+      it('returns the url_name prepended by "/wiki/"', function() {
         // console.log('page urlTitle', page.urlTitle)
         page.urlTitle = 'What_a_day';
-        expect(page.route).to.equal('/wiki/What_a_day')
+        expect(page.route).to.be.equal('/wiki/What_a_day')
       });
     });
 
     describe('renderedContent', function () {
-      xit('converts the markdown-formatted content into HTML', function() {
-        expect(page.renderedContent).to.equal('<p>Hello my friend</p>\n')
+      it('converts the markdown-formatted content into HTML', function() {
+        var markedContent = marked(page.content)
+        expect(page.renderedContent).to.be.equal(markedContent)
       });
     });
   });
+
+
+  /** CLASS METHODS
+   * within the 'optional' field within the third object of findByTag
+   * functionality you attach to model itself that is typically used to do custom querying
+   * findAll/.create/.findOne - adding our extra utility to existing methods
+   * convenient custom querying functions!
+  **/
 
   describe('Class methods', function () {
     var page;
@@ -64,11 +84,12 @@ describe('Page model', function () {
 
     describe('findByTag', function () {
       it('gets pages with the search tag', function() {
+
         var searchPage = Page.findByTag('snow') //returns  a promise
             .then(function(resultPages) {
               expect(resultPages).to.have.lengthOf(1)
             });
-        return searchPage
+        return searchPage //waits for the async task of findByTag (touching db)
       })
 
   // USING THE CALL/DONE METHOD
@@ -78,11 +99,16 @@ describe('Page model', function () {
   //     expect(pages).to.have.lengthOf(0);
   //     done();
   //   })
-  //   .catch(done);
+  //   .catch(done); //if error happens on previous '.then' will catch error
   // });
+  //
+  /*** done callback - 'done' is a convention (can be called anything)
+   * needs to be called at the end of the function!
+   * if error, then pass the done to the .catch function
+   ***/
 
   //USING THE PROMISE METHOD
-      xit('does not get pages without the search tag', function() {
+      it('does not get pages without the search tag', function() {
         var searchPage = Page.findByTag('nothing')
           .then(function(resultPages) {
             expect(resultPages).to.have.lengthOf(0)
@@ -103,7 +129,7 @@ describe('Page model', function () {
         content: 'I am responsible',
         tags: ['first', 'highschool']
       }).then(function(result) {
-        pageOne = result;
+        pageOne = result; //this is where you save the instance in the variable pageOne!!!
       }),
       Page.create({
         title: 'Middle child',
@@ -130,6 +156,9 @@ describe('Page model', function () {
         .then(function(result) {
           // console.log(JSON.stringify(result, null, 2))
           // THIS IS HOW YOU READ COMPLICATED JSON RESULTS
+
+          //below is an example of chai-things
+          expect(result).to.have.lengthOf(1);
           expect(result).not.to.include.a.thing.with.property("id", pageTwo.id)
         })
         return similarPages;
@@ -155,44 +184,57 @@ describe('Page model', function () {
   });
 
   describe('Validations', function () {
-    var pageNoTitle, pageNocontent, pageInvalidStatus;
 
-    beforeEach(function() {
-      pageNoTitle = Page.build({
-        title: null,
-        content: 'I have content',
+    it('errors without title', function() {
+      page = Page.build({
+        content: 'I have a content',
         status: 'open'
       })
-      pageNoContent = Page.build({
+    return page.validate()
+              .then(function(err) {
+                expect(err).to.exist;
+                expect(err.errors).to.contain.a.thing.with.property('path', 'title') //why is path a property?
+              })
+    });
+
+    it('errors without content', function() {
+      page = Page.build({
         title: 'I have a title',
-        content: null,
         status: 'closed'
       })
-      pageInvalidStatus = Page.build({
+      return page.validate()
+                .then(function(err){
+                  expect(err).to.exist;
+                  expect(err.errors).to.contain.a.thing.with.property('path', 'content')
+                })
+    });
+
+    it('errors given an invalid status', function() {
+      page = Page.build({
         title: 'I also have a title',
-        content: 'I also have content',
+        content: 'I also have a content',
         status: 'invalid'
       })
-    })
-
-    afterEach(function() {
-      return Page.destroy({where:{}})
-    })
-
-    it('errors without title', function(done) {
-      pageNoTitle.save()
-      .then(function(result) {
-          expect(result).to.equal('notNull Violation: title cannot be null')
+      return page.save().then(function() {
+        throw Error('Promise should have rejected')
+      }, function(err) {
+        expect(err).to.exist;
+        expect(err.message).to.contain('status')
       })
-      .catch(done)
-      })
-
-    xit('errors without content');
-    xit('errors given an invalid status');
   });
-
-  describe('Hooks', function () {
-    xit('it sets urlTitle based on title before validating');
-  });
-
 });
+
+  describe('Hooks', function() {
+    it('it sets urlTitle based on title before validating', function() {
+      var page = Page.build({
+        title: 'The Who',
+        content: 'A band on first base'
+      });
+
+      page.save()
+        .then(function() {
+          expect(page.urlTitle).to.equal('The_Who')
+        });
+    })
+  })
+})
